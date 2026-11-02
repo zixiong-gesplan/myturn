@@ -1,0 +1,51 @@
+@import "tailwindcss";
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/600.css";
+@import "@fontsource/inter/700.css";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --color-navy: #0b3a5b;
+  --color-navy-dark: #07263c;
+  --color-confirm: #0f7b4a;
+  --color-confirm-dark: #0b5c38;
+  --color-muted: #5b6773;
+  --color-danger: #b42318;
+  --color-canvas: #f4f7fa;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--color-canvas);
+  color: #12202c;
+}
+
+:focus-visible {
+  outline: 3px solid #1d6fa3;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+@media print {
+  header,
+  footer,
+  nav,
+  button {
+    display: none !important;
+  }
+  body {
+    background: white;
+  }
+}

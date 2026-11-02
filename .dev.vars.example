@@ -1,0 +1,16 @@
+# Copiar a .env.local para desarrollo local. Nunca subir secretos al repositorio.
+PHONE_PEPPER=otro-valor-aleatorio-distinto
+APP_BASE_URL=http://localhost:3000
+BUSINESS_TIME_ZONE=Europe/Madrid
+TURSO_DATABASE_URL=file:local.db
+TURSO_AUTH_TOKEN=
+
+# WhatsApp (dejar vacío y desactivado en v1)
+WHATSAPP_ENABLED=false
+WHATSAPP_PAID_MESSAGES_ALLOWED=false
+WHATSAPP_ACCESS_TOKEN=
+WHATSAPP_PHONE_NUMBER_ID=
+WHATSAPP_TEMPLATE_NAME=turno_confirmado
+WHATSAPP_TEMPLATE_LANGUAGE=es
+WHATSAPP_CALLED_TEMPLATE_NAME=turno_llamado
+CRON_SECRET=genera-otro-valor-aleatorio-largo

@@ -54,7 +54,7 @@ pnpm build
 
 1. Crea una base de datos en Turso y obtén su URL y token.
 2. Verifica un dominio de envío en Resend.
-3. Configura en local o en Vercel `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, `EMAIL_PEPPER`, `APP_BASE_URL`, `CRON_SECRET`, `RESEND_API_KEY` y `EMAIL_FROM`. Usa como `EMAIL_FROM` una dirección del dominio verificado.
+3. Configura en local o en Vercel `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, `EMAIL_PEPPER`, `APP_BASE_URL`, `CRON_SECRET`, `RESEND_API_KEY` y `EMAIL_FROM`. Usa como `EMAIL_FROM` una dirección del dominio verificado y define `APP_BASE_URL` con la URL pública HTTPS del sitio en producción. Si no está definida, la app usa el dominio público configurado en los ajustes o las variables automáticas de Vercel.
 4. Ejecuta `pnpm db:migrate` una vez contra la base Turso prevista. El comando aplica las migraciones versionadas de esta app; **no importa D1**.
 5. Crea el único administrador con `pnpm create-admin -- <usuario> <contraseña>` en un entorno con esas variables.
 6. Despliega el proyecto en Vercel. El archivo `vercel.json` configura la tarea diaria de anonimización; Vercel debe tener `CRON_SECRET`.

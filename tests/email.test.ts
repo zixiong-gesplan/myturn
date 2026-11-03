@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { escapeHtml, maskEmail, normalizeEmail } from "../src/shared/email.ts";
+import { resolvePublicOrigin } from "../src/shared/public-url.ts";
 
 describe("correo electrónico", () => {
   it("normaliza el correo y rechaza valores no válidos", () => {
@@ -15,5 +16,22 @@ describe("correo electrónico", () => {
 
   it("escapa valores antes de incluirlos en el HTML del correo", () => {
     expect(escapeHtml(`<script a="b">&'`)).toBe("&lt;script a=&quot;b&quot;&gt;&amp;&#39;");
+  });
+
+  it("evita enlaces localhost en producción y usa el dominio de Vercel", () => {
+    expect(resolvePublicOrigin({
+      appBaseUrl: "http://localhost:3000",
+      vercelProjectProductionUrl: "miturno.example",
+      requestUrl: "http://localhost:3000/api/tickets",
+      production: true,
+    })).toBe("https://miturno.example");
+  });
+
+  it("usa la URL local configurada durante el desarrollo", () => {
+    expect(resolvePublicOrigin({
+      appBaseUrl: "http://localhost:3000",
+      requestUrl: "http://localhost:3000/api/tickets",
+      production: false,
+    })).toBe("http://localhost:3000");
   });
 });

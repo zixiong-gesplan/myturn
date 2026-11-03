@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { countPeopleAheadFromWaitingNumbers } from "../shared/people-ahead";
 import { escapeHtml, maskEmail, normalizeEmail } from "../shared/email";
+import { resolvePublicOrigin } from "../shared/public-url";
 import { formatTicketNumber } from "../shared/ticket-number";
 import { statusLabel, statusMessage, type TicketStatus } from "../shared/status";
 import { verifyPassword } from "../shared/password";
@@ -298,10 +299,18 @@ async function createTicket(input: {
         args: [queue.id, ticketNumber],
       })
     : null;
-  const origin = process.env.APP_BASE_URL || new URL(input.request.url).origin;
+  const origin = resolvePublicOrigin({
+    appBaseUrl: process.env.APP_BASE_URL,
+    configuredBaseUrl: settings.public_base_url,
+    vercelProjectProductionUrl: process.env.VERCEL_PROJECT_PRODUCTION_URL,
+    vercelUrl: process.env.VERCEL_URL,
+    requestUrl: input.request.url,
+    production: process.env.NODE_ENV === "production",
+  });
   const trackingPath = `/seguimiento/${trackingToken}`;
   let emailQueued = false;
   try {
+    if (!origin) throw new Error("No hay una URL pública válida configurada para los enlaces de correo.");
     emailQueued = await sendTicketEmail({
       ticketId: id,
       eventType: "ticket_created",

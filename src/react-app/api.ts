@@ -29,15 +29,15 @@ async function request<T>(path: string, init: RequestInit & { etag?: string } = 
 export const api = {
   publicConfig: () => request<PublicConfig>("/api/config/public"),
   publicQueue: (etag?: string) => request<PublicQueue>("/api/queue/public", { etag }),
-  createTicket: (body: { name: string; phone: string; whatsappConsent: boolean; privacyAccepted: true }) =>
+  createTicket: (body: { name: string; email: string; privacyAccepted: true }) =>
     request<TicketCreated & { existing?: boolean; recovered?: boolean; message?: string }>("/api/tickets", {
       method: "POST",
       body: JSON.stringify(body),
     }),
-  recoverTicket: (phone: string) =>
-    request<TicketCreated & { existing: boolean; recovered: boolean }>("/api/tickets/recover", {
+  recoverTicket: (email: string) =>
+    request<TicketCreated & { existing?: boolean; recovered?: boolean }>("/api/tickets/recover", {
       method: "POST",
-      body: JSON.stringify({ phone }),
+      body: JSON.stringify({ email }),
     }),
   track: (token: string, etag?: string) => request<TrackingView>(`/api/tickets/track/${token}`, { etag }),
   login: (username: string, password: string) =>
@@ -51,8 +51,8 @@ export const api = {
     request<{ queue: { id: string; name: string; isOpen: boolean; openedAt: number; closedAt: number | null }; tickets: AdminTicket[] }>(
       `/api/admin/queues/${encodeURIComponent(queueId)}/tickets`,
     ),
-  createManual: (name: string, phone: string) =>
-    request<TicketCreated>("/api/admin/tickets", { method: "POST", body: JSON.stringify({ name, phone }) }),
+  createManual: (name: string, email: string) =>
+    request<TicketCreated>("/api/admin/tickets", { method: "POST", body: JSON.stringify({ name, email }) }),
   callNext: () => request<{ empty: boolean; message?: string; ticket?: AdminTicket }>("/api/admin/queue/next", { method: "POST" }),
   newQueue: () => request<{ ok: boolean; queueId: string }>("/api/admin/queue/new", { method: "POST" }),
   repeat: () => request<{ ticket: AdminTicket }>("/api/admin/queue/repeat", { method: "POST" }),
@@ -62,7 +62,7 @@ export const api = {
   cancel: (id: string) => request(`/api/admin/tickets/${id}/cancel`, { method: "POST" }),
   pause: () => request("/api/admin/queue/pause", { method: "POST" }),
   resume: () => request("/api/admin/queue/resume", { method: "POST" }),
-  settings: () => request<{ settings: Record<string, string | number>; whatsapp: Record<string, boolean> }>("/api/admin/settings"),
+  settings: () => request<{ settings: Record<string, string | number>; email: Record<string, boolean> }>("/api/admin/settings"),
   saveSettings: (body: Record<string, unknown>) =>
     request("/api/admin/settings", { method: "PATCH", body: JSON.stringify(body) }),
 };

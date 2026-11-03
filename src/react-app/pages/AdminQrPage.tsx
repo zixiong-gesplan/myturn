@@ -9,11 +9,8 @@ export function AdminQrPage() {
   const [url, setUrl] = useState("/turno");
   const [png, setPng] = useState<string>("");
   const [svg, setSvg] = useState<string>("");
-  const [whatsapp, setWhatsapp] = useState(false);
-
   useEffect(() => {
     setUrl(`${window.location.origin}/turno`);
-    api.publicConfig().then((r) => setWhatsapp(r.data.whatsappChannelAvailable));
     api
       .settings()
       .then((r) => {
@@ -67,10 +64,7 @@ export function AdminQrPage() {
           <p className="text-2xl font-bold tracking-wide text-navy">SOLICITA TU TURNO</p>
           {png ? <img src={png} alt="" className="mx-auto my-6 h-56 w-56" /> : null}
           <p>Escanea este código QR con tu móvil.</p>
-          <p className="mt-2">Introduce tu nombre y teléfono y recibirás tu número de turno.</p>
-          {whatsapp ? (
-            <p className="mt-2 text-sm text-muted">Si lo autorizas, también puedes recibir un aviso por WhatsApp.</p>
-          ) : null}
+          <p className="mt-2">Introduce tu nombre y correo y recibirás tu número de turno.</p>
           <button className="mt-6 rounded border px-3 py-2" onClick={() => window.print()}>
             Imprimir plantilla
           </button>

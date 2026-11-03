@@ -69,7 +69,7 @@ export function AdminHistoryPage() {
               <tr>
                 <th className="px-3 py-2">Turno</th>
                 <th className="px-3 py-2">Nombre</th>
-                <th className="px-3 py-2">Teléfono</th>
+                <th className="px-3 py-2">Correo</th>
                 <th className="px-3 py-2">Solicitud</th>
                 <th className="px-3 py-2">Estado</th>
               </tr>
@@ -79,7 +79,7 @@ export function AdminHistoryPage() {
                 <tr key={ticket.id} className="border-t border-slate-100">
                   <td className="px-3 py-2 font-semibold tabular-nums">{ticket.displayNumber}</td>
                   <td className="px-3 py-2">{ticket.name}</td>
-                  <td className="px-3 py-2">{ticket.phoneMasked}</td>
+                  <td className="px-3 py-2">{ticket.emailMasked}</td>
                   <td className="px-3 py-2">{formatWhen(ticket.createdAt)}</td>
                   <td className="px-3 py-2">{statusLabel(ticket.status as TicketStatus)}</td>
                 </tr>

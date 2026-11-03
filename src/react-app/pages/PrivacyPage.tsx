@@ -35,23 +35,23 @@ export function PrivacyPage() {
         )}
         <h2 className="text-lg font-semibold text-navy">Datos y finalidad</h2>
         <p>
-          Tratamos nombre y teléfono para asignar un turno, permitir su seguimiento privado y, solo si lo autorizas y
-          el canal está realmente habilitado, enviarte un aviso por la API oficial de WhatsApp Business de Meta.
+          Tratamos nombre y correo electrónico para asignar el turno y permitir su seguimiento privado. Usamos el
+          correo para enviarte el número y avisarte cuando se acerque tu turno. No lo utilizamos para publicidad.
         </p>
         <h2 className="text-lg font-semibold text-navy">Base jurídica</h2>
         <p>
-          La gestión del turno se basa en la ejecución de una solicitud que tú inicias. El envío por WhatsApp, si llega
-          a activarse, se basa en tu consentimiento, que está desmarcado por defecto.
+          El tratamiento del correo se limita a gestionar la solicitud de turno y las comunicaciones operativas
+          asociadas. Este texto es informativo y debe revisarse jurídicamente antes de producción.
         </p>
         <h2 className="text-lg font-semibold text-navy">Conservación</h2>
         <p>
-          Los datos personales se eliminan o anonimizan a los 7 días desde la finalización del turno (atendido, ausente
-          o cancelado). El número de turno se conserva de forma anónima para no reutilizar numeración.
+          Los datos personales, incluido el correo, se eliminan o anonimizan a los 7 días desde la finalización del
+          turno (atendido, ausente o cancelado). El número de turno se conserva de forma anónima.
         </p>
         <h2 className="text-lg font-semibold text-navy">Destinatarios</h2>
         <p>
-          El personal autorizado del establecimiento. Si WhatsApp está activo, Meta trata el número y el contenido del
-          mensaje según sus condiciones. El alojamiento previsto es Vercel y la base de datos se aloja en Turso.
+          El personal autorizado del establecimiento. Los correos transaccionales se envían mediante Resend. El
+          alojamiento previsto es Vercel y la base de datos se aloja en Turso.
         </p>
         <h2 className="text-lg font-semibold text-navy">Derechos</h2>
         <p>
@@ -61,7 +61,7 @@ export function PrivacyPage() {
         <h2 className="text-lg font-semibold text-navy">Revisión jurídica pendiente</h2>
         <p>
           Este texto es una base técnica. Antes de producción debe revisarlo un profesional: registro de actividades,
-          encargos de tratamiento con Vercel, Turso y Meta, evaluación de bases jurídicas, textos de capa informativa y
+          encargos de tratamiento con Vercel, Turso y Resend, evaluación de bases jurídicas, textos de capa informativa y
           cláusulas contractuales.
         </p>
       </article>

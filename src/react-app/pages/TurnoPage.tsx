@@ -1,25 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import type { PublicConfig, TicketCreated } from "../../shared/types.ts";
+import type { TicketCreated } from "../../shared/types.ts";
 import { ApiError, api } from "../api.ts";
+import { InstitutionLogo } from "../components/InstitutionLogo.tsx";
 import { PublicLayout } from "../components/PublicLayout.tsx";
 
 export function TurnoPage() {
-  const [config, setConfig] = useState<PublicConfig | null>(null);
   const [name, setName] = useState("");
-  const [phone, setPhone] = useState("+34");
-  const [whatsappConsent, setWhatsappConsent] = useState(false);
+  const [email, setEmail] = useState("");
   const [privacyAccepted, setPrivacyAccepted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [existingHint, setExistingHint] = useState(false);
   const [created, setCreated] = useState<(TicketCreated & { recovered?: boolean }) | null>(null);
-
-  useEffect(() => {
-    api.publicConfig().then((r) => setConfig(r.data));
-  }, []);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -33,8 +28,7 @@ export function TurnoPage() {
     try {
       const result = await api.createTicket({
         name,
-        phone,
-        whatsappConsent: config?.whatsappChannelAvailable ? whatsappConsent : false,
+        email,
         privacyAccepted: true,
       });
       const data = result.data;
@@ -60,7 +54,7 @@ export function TurnoPage() {
   async function recover() {
     setError(null);
     try {
-      const result = await api.recoverTicket(phone);
+      const result = await api.recoverTicket(email);
       setCreated(result.data);
       setExistingHint(false);
     } catch (err) {
@@ -72,6 +66,7 @@ export function TurnoPage() {
     return (
       <PublicLayout>
         <section className="mx-auto max-w-md rounded-2xl bg-white p-6 shadow-sm" aria-live="polite">
+          <InstitutionLogo />
           <p className="text-sm font-medium text-confirm">Confirmación</p>
           <h1 className="mt-1 text-2xl font-bold text-navy">¡Tu turno está confirmado!</h1>
           <p className="mt-6 text-center font-semibold tracking-[0.2em] text-navy" style={{ fontSize: "3.2rem", lineHeight: 1 }}>
@@ -84,13 +79,17 @@ export function TurnoPage() {
             Turno que se está atendiendo: {created.currentDisplayNumber ?? "ninguno todavía"}.
           </p>
           <p className="mt-1 text-center text-muted">Personas por delante: {created.peopleAhead}.</p>
-          {!created.whatsappQueued ? (
+          {created.emailQueued ? (
+            <p className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-confirm-dark">
+              Hemos enviado el número de turno y el enlace de seguimiento a tu correo.
+            </p>
+          ) : created.recovered ? (
             <p className="mt-4 rounded-lg bg-slate-100 p-3 text-sm text-muted">
-              Guarda el enlace de seguimiento. La confirmación en pantalla es inmediata y no depende de WhatsApp.
+              Este es tu turno recuperado. El correo original no se ha vuelto a enviar; guarda el enlace de seguimiento.
             </p>
           ) : (
-            <p className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-confirm-dark">
-              Hemos puesto en cola un aviso por WhatsApp. El envío depende de la aprobación de Meta y puede tener coste.
+            <p className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+              No se pudo enviar el correo. Guarda el enlace de seguimiento y avisa al personal si necesitas ayuda.
             </p>
           )}
           <Link
@@ -107,9 +106,10 @@ export function TurnoPage() {
   return (
     <PublicLayout>
       <section className="mx-auto max-w-md rounded-2xl bg-white p-6 shadow-sm">
+        <InstitutionLogo />
         <h1 className="text-2xl font-bold text-navy">Solicita tu turno</h1>
         <p className="mt-2 text-sm text-muted">
-          Introduce tu nombre y teléfono móvil. Recibirás el número en esta pantalla.
+          Introduce tu nombre y correo electrónico. Recibirás el número del turno por correo.
         </p>
         <form className="mt-6 space-y-4" onSubmit={onSubmit}>
           <div>
@@ -128,43 +128,25 @@ export function TurnoPage() {
             />
           </div>
           <div>
-            <label htmlFor="phone" className="block text-sm font-medium">
-              Teléfono móvil
+            <label htmlFor="email" className="block text-sm font-medium">
+              Correo electrónico
             </label>
             <input
-              id="phone"
-              name="phone"
-              type="tel"
-              autoComplete="tel"
+              id="email"
+              name="email"
+              type="email"
+              autoComplete="email"
               required
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+              maxLength={254}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-              aria-describedby="phone-help"
+              aria-describedby="email-help"
             />
-            <p id="phone-help" className="mt-1 text-xs text-muted">
-              Prefijo por defecto +34. Puedes indicar otro prefijo internacional.
+            <p id="email-help" className="mt-1 text-xs text-muted">
+              Lo usaremos solo para enviarte el número y avisarte cuando se acerque tu turno.
             </p>
           </div>
-          {config?.whatsappChannelAvailable ? (
-            <label className="flex items-start gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={whatsappConsent}
-                onChange={(e) => setWhatsappConsent(e.target.checked)}
-                className="mt-1"
-              />
-              <span>
-                Quiero recibir la confirmación por WhatsApp. Puedo retirar este consentimiento más adelante. El envío
-                usa la API oficial de Meta y no está garantizado como gratuito.
-              </span>
-            </label>
-          ) : (
-            <p className="rounded-lg bg-slate-100 p-3 text-sm text-muted">
-              El aviso automático por WhatsApp no está activo. Tu turno se confirma aquí y con un enlace privado de
-              seguimiento.
-            </p>
-          )}
           <label className="flex items-start gap-2 text-sm">
             <input
               type="checkbox"
@@ -188,9 +170,9 @@ export function TurnoPage() {
           ) : null}
           {existingHint ? (
             <div className="rounded-lg border border-slate-200 p-3 text-sm">
-              <p>Ya hay un turno activo asociado a este teléfono.</p>
+              <p>Ya hay un turno activo asociado a este correo.</p>
               <p className="mt-1 text-muted">
-                Por privacidad no mostramos el número solo con el teléfono. Si lo pediste en este dispositivo, puedes
+                Por privacidad no mostramos el número solo con el correo. Si lo pediste en este dispositivo, puedes
                 recuperarlo. Si tienes el enlace privado, ábrelo.
               </p>
               <button type="button" onClick={recover} className="mt-3 rounded-lg bg-navy px-3 py-2 text-white">

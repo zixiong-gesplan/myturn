@@ -14,7 +14,7 @@ export function AdminDashboard() {
   const [confirm, setConfirm] = useState<{ id: string; action: "cancel" | "absent"; label: string } | null>(null);
   const [manualOpen, setManualOpen] = useState(false);
   const [manualName, setManualName] = useState("");
-  const [manualPhone, setManualPhone] = useState("+34");
+  const [manualEmail, setManualEmail] = useState("");
   const etag = useRef<string | undefined>(undefined);
 
   async function refresh(force = false) {
@@ -104,7 +104,7 @@ export function AdminDashboard() {
             <tr>
               <th className="px-3 py-2">Turno</th>
               <th className="px-3 py-2">Nombre</th>
-              <th className="px-3 py-2">Teléfono</th>
+              <th className="px-3 py-2">Correo</th>
               <th className="px-3 py-2">Solicitud</th>
               <th className="px-3 py-2">Estado</th>
               <th className="px-3 py-2">Acciones</th>
@@ -122,7 +122,7 @@ export function AdminDashboard() {
                 <tr key={t.id} className="border-t border-slate-100">
                   <td className="px-3 py-2 font-semibold tabular-nums">{t.displayNumber}</td>
                   <td className="px-3 py-2">{t.name}</td>
-                  <td className="px-3 py-2">{t.phoneMasked}</td>
+                  <td className="px-3 py-2">{t.emailMasked}</td>
                   <td className="px-3 py-2">{formatWhen(t.createdAt)}</td>
                   <td className="px-3 py-2">{statusLabel(t.status as TicketStatus)}</td>
                   <td className="px-3 py-2">
@@ -189,9 +189,10 @@ export function AdminDashboard() {
             className="w-full max-w-md rounded-xl bg-white p-5"
             onSubmit={(e) => {
               e.preventDefault();
-              void run(() => api.createManual(manualName, manualPhone), "Turno creado");
+              void run(() => api.createManual(manualName, manualEmail), "Turno creado");
               setManualOpen(false);
               setManualName("");
+              setManualEmail("");
             }}
           >
             <h2 className="text-lg font-semibold">Crear turno manual</h2>
@@ -200,8 +201,8 @@ export function AdminDashboard() {
               <input className="mt-1 w-full rounded border px-3 py-2" value={manualName} onChange={(e) => setManualName(e.target.value)} required />
             </label>
             <label className="mt-3 block text-sm">
-              Teléfono
-              <input className="mt-1 w-full rounded border px-3 py-2" value={manualPhone} onChange={(e) => setManualPhone(e.target.value)} required />
+              Correo electrónico
+              <input type="email" className="mt-1 w-full rounded border px-3 py-2" value={manualEmail} onChange={(e) => setManualEmail(e.target.value)} required />
             </label>
             <div className="mt-4 flex justify-end gap-2">
               <button type="button" onClick={() => setManualOpen(false)}>

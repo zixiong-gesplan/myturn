@@ -14,7 +14,7 @@ export function AdminSettingsPage() {
     privacyPolicyVersion: "1.0",
     retentionDays: 7,
   });
-  const [whatsapp, setWhatsapp] = useState<Record<string, boolean> | null>(null);
+  const [email, setEmail] = useState<Record<string, boolean> | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -28,7 +28,7 @@ export function AdminSettingsPage() {
         privacyPolicyVersion: String(r.data.settings.privacyPolicyVersion ?? "1.0"),
         retentionDays: Number(r.data.settings.retentionDays ?? 7),
       });
-      setWhatsapp(r.data.whatsapp);
+      setEmail(r.data.email);
     });
   }, []);
 
@@ -79,16 +79,15 @@ export function AdminSettingsPage() {
         {message ? <p className="text-sm">{message}</p> : null}
       </form>
       <section className="mt-8 max-w-xl rounded-xl bg-white p-5 text-sm shadow-sm">
-        <h2 className="font-semibold text-navy">WhatsApp (API oficial)</h2>
+        <h2 className="font-semibold text-navy">Avisos por correo</h2>
         <p className="mt-2 text-muted">
-          El envío está desactivado por defecto. No se afirma que los mensajes sean gratuitos. Hasta que exista una
-          modalidad de coste cero validada, no se enviarán mensajes automáticos.
+          Se envía el número al solicitar turno y se avisa al siguiente cliente cuando termina, se cancela o se marca
+          ausente el turno actual. Configura Resend en las variables de entorno para activar los envíos.
         </p>
-        {whatsapp ? (
+        {email ? (
           <ul className="mt-3 list-disc pl-5">
-            <li>WHATSAPP_ENABLED: {whatsapp.enabled ? "sí" : "no"}</li>
-            <li>WHATSAPP_PAID_MESSAGES_ALLOWED: {whatsapp.paidMessagesAllowed ? "sí" : "no"}</li>
-            <li>Credenciales configuradas: {whatsapp.configured ? "sí" : "no"}</li>
+            <li>Servicio de correo: {email.configured ? "configurado" : "pendiente de configurar"}</li>
+            <li>Remitente verificado: {email.senderConfigured ? "configurado" : "pendiente de configurar"}</li>
           </ul>
         ) : null}
       </section>

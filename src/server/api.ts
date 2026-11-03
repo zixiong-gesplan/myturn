@@ -1,7 +1,6 @@
 import { z } from "zod";
-import { isWhatsAppSendingAllowed, whatsappSkipReason } from "../shared/whatsapp-policy";
 import { countPeopleAheadFromWaitingNumbers } from "../shared/people-ahead";
-import { normalizePhone, maskPhone } from "../shared/phone";
+import { escapeHtml, maskEmail, normalizeEmail } from "../shared/email";
 import { formatTicketNumber } from "../shared/ticket-number";
 import { statusLabel, statusMessage, type TicketStatus } from "../shared/status";
 import { verifyPassword } from "../shared/password";
@@ -122,16 +121,6 @@ async function settingsMap(): Promise<Record<string, string>> {
   return getAppSettings();
 }
 
-function waConfig() {
-  return {
-    enabled: process.env.WHATSAPP_ENABLED === "true",
-    paidMessagesAllowed: process.env.WHATSAPP_PAID_MESSAGES_ALLOWED === "true",
-    accessTokenConfigured: Boolean(process.env.WHATSAPP_ACCESS_TOKEN),
-    phoneNumberIdConfigured: Boolean(process.env.WHATSAPP_PHONE_NUMBER_ID),
-    templateName: process.env.WHATSAPP_TEMPLATE_NAME || "turno_confirmado",
-  };
-}
-
 async function currentQueue() {
   const result = await getClientForTransaction().execute(
     "SELECT * FROM queues WHERE is_open = 1 LIMIT 1",
@@ -236,19 +225,18 @@ async function ticketTracking(token: string) {
 
 async function createTicket(input: {
   name: string;
-  phone: string;
-  whatsappConsent: boolean;
+  email: string;
   source: "web" | "manual";
   operatorId?: string;
   request: Request;
 }) {
   const name = input.name.trim();
   if (name.length < 2 || name.length > 80) throw new HttpError(400, "INVALID_NAME", "Indica un nombre válido.");
-  const phone = normalizePhone(input.phone);
-  if (!phone) throw new HttpError(400, "INVALID_PHONE", "El teléfono no es válido. Usa un prefijo internacional, por ejemplo +34.");
-  const pepper = process.env.PHONE_PEPPER;
+  const email = normalizeEmail(input.email);
+  if (!email) throw new HttpError(400, "INVALID_EMAIL", "Indica un correo electrónico válido.");
+  const pepper = process.env.EMAIL_PEPPER || process.env.PHONE_PEPPER;
   if (!pepper || pepper.length < 16) throw new HttpError(500, "SERVER_MISCONFIGURED", "El servicio no está configurado correctamente.");
-  const phoneHash = await hmacSha256Hex(pepper, phone);
+  const emailHash = await hmacSha256Hex(pepper, email);
   const now = Math.floor(Date.now() / 1000);
   const id = crypto.randomUUID();
   const trackingToken = [...crypto.getRandomValues(new Uint8Array(32))]
@@ -256,7 +244,6 @@ async function createTicket(input: {
     .join("");
   const tokenHash = await sha256Hex(trackingToken);
   const settings = await settingsMap();
-  const privacyVersion = settings.privacy_policy_version || "1.0";
   const configuredRetention = Number(settings.retention_days || 7);
   const retention = Number.isFinite(configuredRetention)
     ? Math.min(30, Math.max(1, configuredRetention))
@@ -268,11 +255,11 @@ async function createTicket(input: {
   let ticketNumber: number;
   try {
     const active = await tx.execute({
-      sql: `SELECT id FROM tickets WHERE queue_id = ? AND phone_lookup_hash = ?
+      sql: `SELECT id FROM tickets WHERE queue_id = ? AND email_lookup_hash = ?
             AND status IN ('waiting', 'called', 'in_service') AND personal_data_cleared = 0 LIMIT 1`,
-      args: [queue.id, phoneHash],
+      args: [queue.id, emailHash],
     });
-    if (active.rows.length) throw new HttpError(409, "ACTIVE_TICKET_EXISTS", "Ya existe un turno activo para este teléfono.");
+    if (active.rows.length) throw new HttpError(409, "ACTIVE_TICKET_EXISTS", "Ya existe un turno activo con este correo.");
     const counter = await tx.execute({
       sql: "UPDATE queues SET last_number = last_number + 1 WHERE id = ? AND is_open = 1 RETURNING last_number",
       args: [queue.id],
@@ -282,18 +269,13 @@ async function createTicket(input: {
     const displayNumber = formatTicketNumber(ticketNumber);
     await tx.execute({
       sql: `INSERT INTO tickets
-            (id, queue_id, number, display_number, name, phone_normalized, phone_lookup_hash, status, source, created_at, updated_at)
+            (id, queue_id, number, display_number, name, email, email_lookup_hash, status, source, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, 'waiting', ?, ?, ?)`,
-      args: [id, queue.id, ticketNumber, displayNumber, name, phone, phoneHash, input.source, now, now],
+      args: [id, queue.id, ticketNumber, displayNumber, name, email, emailHash, input.source, now, now],
     });
     await tx.execute({
       sql: "INSERT INTO tracking_tokens (id, ticket_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)",
       args: [crypto.randomUUID(), id, tokenHash, now + retention * 86400, now],
-    });
-    await tx.execute({
-      sql: `INSERT INTO consents (id, ticket_id, channel, consent_given, privacy_policy_version, consent_timestamp)
-            VALUES (?, ?, 'whatsapp', ?, ?, ?)`,
-      args: [crypto.randomUUID(), id, input.whatsappConsent ? 1 : 0, privacyVersion, now],
     });
     await tx.execute({
       sql: `INSERT INTO ticket_events (id, queue_id, ticket_id, operator_id, event_type, created_at, metadata)
@@ -304,6 +286,9 @@ async function createTicket(input: {
   } catch (cause) {
     await tx.rollback();
     if (cause instanceof HttpError) throw cause;
+    if (cause instanceof Error && cause.message.includes("idx_tickets_active_email")) {
+      throw new HttpError(409, "ACTIVE_TICKET_EXISTS", "Ya existe un turno activo con este correo.");
+    }
     throw cause;
   }
   const current = await queueSnapshot();
@@ -315,9 +300,19 @@ async function createTicket(input: {
     : null;
   const origin = process.env.APP_BASE_URL || new URL(input.request.url).origin;
   const trackingPath = `/seguimiento/${trackingToken}`;
-  const whatsappQueued = input.whatsappConsent
-    ? await sendWhatsApp(id, name, formatTicketNumber(ticketNumber), phone, `${origin}${trackingPath}`)
-    : false;
+  let emailQueued = false;
+  try {
+    emailQueued = await sendTicketEmail({
+      ticketId: id,
+      eventType: "ticket_created",
+      email,
+      subject: `Tu turno es ${formatTicketNumber(ticketNumber)}`,
+      text: `Hola ${name}, tu turno es ${formatTicketNumber(ticketNumber)}. Consulta su estado en ${origin}${trackingPath}.`,
+      html: `<p>Hola ${escapeHtml(name)},</p><p>Tu número de turno es <strong>${formatTicketNumber(ticketNumber)}</strong>.</p><p><a href="${escapeHtml(`${origin}${trackingPath}`)}">Consulta el estado de tu turno</a>.</p>`,
+    });
+  } catch (cause) {
+    console.error("No se pudo registrar el envío del correo del turno", cause);
+  }
   return {
     id,
     displayNumber: formatTicketNumber(ticketNumber),
@@ -325,89 +320,93 @@ async function createTicket(input: {
     trackingPath,
     currentDisplayNumber: current.currentDisplayNumber,
     peopleAhead: Number(ahead?.rows[0]?.count ?? 0),
-    whatsappQueued,
+    emailQueued,
   };
 }
 
-async function sendWhatsApp(
-  ticketId: string,
-  name: string,
-  displayNumber: string,
-  phone: string,
-  trackingUrl: string,
-  event: "created" | "called" = "created",
-): Promise<boolean> {
-  const config = {
-    ...waConfig(),
-    templateName: event === "called"
-      ? process.env.WHATSAPP_CALLED_TEMPLATE_NAME || "turno_llamado"
-      : waConfig().templateName,
-  };
-  const allowed = isWhatsAppSendingAllowed(config);
+async function sendTicketEmail(input: {
+  ticketId: string;
+  eventType: "ticket_created" | "next_in_queue";
+  email: string;
+  subject: string;
+  text: string;
+  html: string;
+}): Promise<boolean> {
   const client = getClientForTransaction();
   const now = Math.floor(Date.now() / 1000);
-  if (!allowed) {
+  const existing = await client.execute({
+    sql: `SELECT id FROM notification_attempts
+          WHERE ticket_id = ? AND channel = 'email' AND event_type = ?
+            AND status IN ('accepted', 'sent') LIMIT 1`,
+    args: [input.ticketId, input.eventType],
+  });
+  if (existing.rows.length) return true;
+
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.EMAIL_FROM;
+  if (!apiKey || !from) {
     await client.execute({
-      sql: `INSERT INTO notification_attempts (id, ticket_id, channel, status, attempted_at, error_code)
-            VALUES (?, ?, 'whatsapp', 'skipped', ?, ?)`,
-      args: [crypto.randomUUID(), ticketId, now, whatsappSkipReason(config)],
+      sql: `INSERT INTO notification_attempts
+            (id, ticket_id, channel, event_type, status, attempted_at, error_code)
+            VALUES (?, ?, 'email', ?, 'skipped', ?, ?)`,
+      args: [crypto.randomUUID(), input.ticketId, input.eventType, now, !apiKey ? "missing_api_key" : "missing_sender"],
     });
     return false;
   }
+
   try {
-    const response = await fetch(
-      `https://graph.facebook.com/v21.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          messaging_product: "whatsapp",
-          to: phone.replace(/^\+/, ""),
-          type: "template",
-          template: {
-            name: config.templateName,
-            language: { code: process.env.WHATSAPP_TEMPLATE_LANGUAGE || "es" },
-            components: [{
-              type: "body",
-              parameters: event === "called"
-                ? [
-                    { type: "text", text: name.slice(0, 60) },
-                    { type: "text", text: displayNumber },
-                  ]
-                : [
-                    { type: "text", text: name.slice(0, 60) },
-                    { type: "text", text: displayNumber },
-                    { type: "text", text: trackingUrl },
-                  ],
-            }],
-          },
-        }),
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
       },
-    );
-    const payload = (await response.json()) as { messages?: Array<{ id?: string }>; error?: { code?: number } };
-    const sent = response.ok;
+      body: JSON.stringify({
+        from,
+        to: [input.email],
+        subject: input.subject,
+        text: input.text,
+        html: input.html,
+      }),
+      signal: AbortSignal.timeout(8000),
+    });
+    const responseText = await response.text();
+    let providerId: string | null = null;
+    if (responseText) {
+      try {
+        providerId = (JSON.parse(responseText) as { id?: string }).id ?? null;
+      } catch {
+        providerId = null;
+      }
+    }
+    const accepted = response.ok && Boolean(providerId);
     await client.execute({
       sql: `INSERT INTO notification_attempts
-            (id, ticket_id, channel, status, provider_message_id, attempted_at, error_code)
-            VALUES (?, ?, 'whatsapp', ?, ?, ?, ?)`,
+            (id, ticket_id, channel, event_type, status, provider_message_id, attempted_at, error_code)
+            VALUES (?, ?, 'email', ?, ?, ?, ?, ?)`,
       args: [
         crypto.randomUUID(),
-        ticketId,
-        sent ? "accepted" : "failed",
-        payload.messages?.[0]?.id ?? null,
+        input.ticketId,
+        input.eventType,
+        accepted ? "accepted" : "failed",
+        providerId,
         now,
-        sent ? null : String(payload.error?.code ?? response.status),
+        accepted ? null : `provider_${response.status}`,
       ],
     });
-    return sent;
-  } catch {
+    return accepted;
+  } catch (cause) {
     await client.execute({
-      sql: `INSERT INTO notification_attempts (id, ticket_id, channel, status, attempted_at, error_code)
-            VALUES (?, ?, 'whatsapp', 'failed', ?, 'network')`,
-      args: [crypto.randomUUID(), ticketId, now],
+      sql: `INSERT INTO notification_attempts
+            (id, ticket_id, channel, event_type, status, attempted_at, error_code)
+            VALUES (?, ?, 'email', ?, 'failed', ?, ?)`,
+      args: [
+        crypto.randomUUID(),
+        input.ticketId,
+        input.eventType,
+        now,
+        cause instanceof Error && cause.name === "TimeoutError" ? "timeout" : "network",
+      ],
     });
     return false;
   }
@@ -483,7 +482,7 @@ async function adminTickets(filter: "active" | "today" | "all") {
       ? ""
       : "";
   const result = await getClientForTransaction().execute({
-    sql: `SELECT id, number, display_number, name, phone_normalized, created_at, status, source
+    sql: `SELECT id, number, display_number, name, email, created_at, status, source
           FROM tickets WHERE queue_id = ? ${clause} ORDER BY number DESC LIMIT 200`,
     args: [queue.id],
   });
@@ -504,7 +503,7 @@ async function adminTickets(filter: "active" | "today" | "all") {
       number: number;
       display_number: string;
       name: string | null;
-      phone_normalized: string | null;
+      email: string | null;
       created_at: number;
       status: TicketStatus;
       source: "web" | "manual";
@@ -512,7 +511,7 @@ async function adminTickets(filter: "active" | "today" | "all") {
       id: ticket.id,
       displayNumber: ticket.display_number || formatTicketNumber(ticket.number),
       name: ticket.name || "(anonimizado)",
-      phoneMasked: maskPhone(ticket.phone_normalized),
+      emailMasked: maskEmail(ticket.email),
       createdAt: ticket.created_at,
       status: ticket.status,
       source: ticket.source,
@@ -537,10 +536,10 @@ async function callNext(operator: User, request: Request) {
     if (!queue) throw new HttpError(409, "QUEUE_CLOSED", "No hay una cola abierta.");
     if (queue.is_paused) throw new HttpError(409, "QUEUE_PAUSED", "La cola está en pausa. Reanúdala para llamar al siguiente turno.");
     const selected = await tx.execute({
-      sql: "SELECT id, display_number, name, phone_normalized FROM tickets WHERE queue_id = ? AND status = 'waiting' ORDER BY number ASC LIMIT 1",
+      sql: "SELECT id, display_number, name, email FROM tickets WHERE queue_id = ? AND status = 'waiting' ORDER BY number ASC LIMIT 1",
       args: [queue.id],
     });
-    const ticket = row<{ id: string; display_number: string; name: string | null; phone_normalized: string | null }>(selected.rows[0]);
+    const ticket = row<{ id: string; display_number: string; name: string | null; email: string | null }>(selected.rows[0]);
     if (!ticket) {
       await tx.commit();
       return null;
@@ -560,16 +559,6 @@ async function callNext(operator: User, request: Request) {
       args: [crypto.randomUUID(), queue.id, ticket.id, operator.id, now],
     });
     await tx.commit();
-    if (ticket.phone_normalized) {
-      const consent = await getClientForTransaction().execute({
-        sql: "SELECT consent_given FROM consents WHERE ticket_id = ? AND channel = 'whatsapp' ORDER BY consent_timestamp DESC LIMIT 1",
-        args: [ticket.id],
-      });
-      if (Number(consent.rows[0]?.consent_given) === 1) {
-        const origin = process.env.APP_BASE_URL || new URL(request.url).origin;
-        await sendWhatsApp(ticket.id, ticket.name || "Cliente", ticket.display_number, ticket.phone_normalized, origin, "called");
-      }
-    }
     return { id: ticket.id, displayNumber: ticket.display_number };
   } catch (cause) {
     await tx.rollback();
@@ -588,10 +577,16 @@ async function mutateStatus(ticketId: string, operator: User, next: "in_service"
   };
   try {
     const result = await tx.execute({
-      sql: "SELECT id, queue_id, status FROM tickets WHERE id = ?",
+      sql: `SELECT t.id, t.queue_id, t.status, q.current_ticket_id
+            FROM tickets t JOIN queues q ON q.id = t.queue_id WHERE t.id = ?`,
       args: [ticketId],
     });
-    const ticket = row<{ id: string; queue_id: string; status: TicketStatus }>(result.rows[0]);
+    const ticket = row<{
+      id: string;
+      queue_id: string;
+      status: TicketStatus;
+      current_ticket_id: string | null;
+    }>(result.rows[0]);
     if (!ticket) throw new HttpError(404, "NOT_FOUND", "Turno no encontrado");
     if (!allowed[next].includes(ticket.status)) {
       if (ticket.status === next) {
@@ -618,10 +613,49 @@ async function mutateStatus(ticketId: string, operator: User, next: "in_service"
       });
     }
     await tx.commit();
+    if (
+      ["completed", "absent", "cancelled"].includes(next) &&
+      ticket.current_ticket_id === ticket.id
+    ) {
+      try {
+        await notifyNextWaiting(ticket.queue_id);
+      } catch (cause) {
+        console.error("No se pudo enviar el aviso al siguiente turno", cause);
+      }
+    }
     return { id: ticketId, status: next };
   } catch (cause) {
     await tx.rollback();
     throw cause;
+  }
+}
+
+async function notifyNextWaiting(queueId: string): Promise<void> {
+  const result = await getClientForTransaction().execute({
+    sql: `SELECT id, display_number, name, email FROM tickets
+          WHERE queue_id = ? AND status = 'waiting' AND email IS NOT NULL
+          ORDER BY number ASC LIMIT 1`,
+    args: [queueId],
+  });
+  const ticket = row<{
+    id: string;
+    display_number: string;
+    name: string | null;
+    email: string;
+  }>(result.rows[0]);
+  if (!ticket) return;
+  const name = ticket.name || "Cliente";
+  try {
+    await sendTicketEmail({
+      ticketId: ticket.id,
+      eventType: "next_in_queue",
+      email: ticket.email,
+      subject: `Prepárate: tu turno ${ticket.display_number} se acerca`,
+      text: `Hola ${name}, el turno anterior ya ha sido atendido. Puedes acercarte a la cola. Tu número es ${ticket.display_number}.`,
+      html: `<p>Hola ${escapeHtml(name)},</p><p>El turno anterior ya ha sido atendido. Puedes acercarte a la cola.</p><p>Tu número es <strong>${escapeHtml(ticket.display_number)}</strong>.</p>`,
+    });
+  } catch (cause) {
+    console.error("No se pudo registrar el aviso al siguiente turno", cause);
   }
 }
 
@@ -677,8 +711,7 @@ const loginSchema = z.object({
 });
 const createTicketSchema = z.object({
   name: z.string().trim().min(2).max(80),
-  phone: z.string().trim().min(6).max(20),
-  whatsappConsent: z.boolean().optional().default(false),
+  email: z.string().trim().email().max(254),
   privacyAccepted: z.literal(true),
 });
 
@@ -693,11 +726,8 @@ export async function handleApi(request: Request): Promise<Response> {
 
     if (method === "GET" && path.join("/") === "config/public") {
       const settings = await settingsMap();
-      const wa = waConfig();
       return addEtag(request, {
         establishmentName: settings.establishment_name || "MiTurno",
-        whatsappChannelAvailable: isWhatsAppSendingAllowed(wa),
-        defaultCountry: "ES",
         privacyPolicyVersion: settings.privacy_policy_version || "1.0",
         dataControllerConfigured: Boolean(settings.data_controller_name && settings.contact_email),
         dataControllerName: settings.data_controller_name || "",
@@ -729,7 +759,8 @@ export async function handleApi(request: Request): Promise<Response> {
       try {
         for (const ticket of rows<{ id: string }>(expired.rows)) {
           await tx.execute({
-            sql: `UPDATE tickets SET name = NULL, phone_normalized = NULL, phone_lookup_hash = NULL,
+            sql: `UPDATE tickets SET name = NULL, email = NULL, email_lookup_hash = NULL,
+                    phone_normalized = NULL, phone_lookup_hash = NULL,
                     personal_data_cleared = 1, updated_at = ?
                   WHERE id = ? AND personal_data_cleared = 0`,
             args: [Math.floor(Date.now() / 1000), ticket.id],
@@ -756,32 +787,32 @@ export async function handleApi(request: Request): Promise<Response> {
       const ipLimit = await rateLimit(`ticket:ip:${clientIp(request)}`, 20, 3600);
       if (!ipLimit) throw new HttpError(429, "RATE_LIMITED", "Has realizado demasiadas solicitudes. Inténtalo más tarde.");
       const payload = createTicketSchema.parse(await bodyJson(request));
-      const normalizedPhone = normalizePhone(payload.phone);
-      const pepper = process.env.PHONE_PEPPER;
-      if (!normalizedPhone) throw new HttpError(400, "INVALID_PHONE", "El teléfono no es válido.");
+      const email = normalizeEmail(payload.email);
+      const pepper = process.env.EMAIL_PEPPER || process.env.PHONE_PEPPER;
+      if (!email) throw new HttpError(400, "INVALID_EMAIL", "El correo electrónico no es válido.");
       if (!pepper || pepper.length < 16) throw new HttpError(500, "SERVER_MISCONFIGURED", "El servicio no está configurado correctamente.");
-      const phoneLimitHash = await hmacSha256Hex(pepper, normalizedPhone);
-      const phoneLimit = await rateLimit(`ticket:phone:${phoneLimitHash}`, 5, 3600);
-      if (!phoneLimit) throw new HttpError(429, "RATE_LIMITED", "Has realizado demasiadas solicitudes. Inténtalo más tarde.");
+      const emailLimitHash = await hmacSha256Hex(pepper, email);
+      const emailLimit = await rateLimit(`ticket:email:${emailLimitHash}`, 5, 3600);
+      if (!emailLimit) throw new HttpError(429, "RATE_LIMITED", "Has realizado demasiadas solicitudes. Inténtalo más tarde.");
       const created = await createTicket({ ...payload, source: "web", request });
       return json(created, 201, {
         "Set-Cookie": cookieHeader(TRACK_COOKIE, created.trackingToken, request, 7 * 86400),
       });
     }
     if (method === "POST" && path.join("/") === "tickets/recover") {
-      const payload = z.object({ phone: z.string().min(6).max(20) }).parse(await bodyJson(request));
+      const payload = z.object({ email: z.string().trim().email().max(254) }).parse(await bodyJson(request));
       const trackingToken = cookieValue(request, TRACK_COOKIE);
       if (!trackingToken) throw new HttpError(403, "RECOVERY_DENIED", "No hay un enlace privado en este dispositivo. Usa el enlace original o pide ayuda al personal.");
-      const phone = normalizePhone(payload.phone);
-      const pepper = process.env.PHONE_PEPPER;
-      if (!phone || !pepper || pepper.length < 16) throw new HttpError(403, "RECOVERY_DENIED", "No se puede mostrar el turno desde este dispositivo.");
+      const email = normalizeEmail(payload.email);
+      const pepper = process.env.EMAIL_PEPPER || process.env.PHONE_PEPPER;
+      if (!email || !pepper || pepper.length < 16) throw new HttpError(403, "RECOVERY_DENIED", "No se puede mostrar el turno desde este dispositivo.");
       const tokenHash = await sha256Hex(trackingToken);
-      const phoneHash = await hmacSha256Hex(pepper, phone);
+      const emailHash = await hmacSha256Hex(pepper, email);
       const result = await client.execute({
         sql: `SELECT t.id, t.display_number FROM tracking_tokens tok
               JOIN tickets t ON t.id = tok.ticket_id
-              WHERE tok.token_hash = ? AND tok.expires_at >= ? AND t.phone_lookup_hash = ?`,
-        args: [tokenHash, Math.floor(Date.now() / 1000), phoneHash],
+              WHERE tok.token_hash = ? AND tok.expires_at >= ? AND t.email_lookup_hash = ?`,
+        args: [tokenHash, Math.floor(Date.now() / 1000), emailHash],
       });
       const ticket = row<{ id: string; display_number: string }>(result.rows[0]);
       if (!ticket) throw new HttpError(403, "RECOVERY_DENIED", "No se puede mostrar el turno desde este dispositivo.");
@@ -793,7 +824,8 @@ export async function handleApi(request: Request): Promise<Response> {
         trackingPath: `/seguimiento/${trackingToken}`,
         currentDisplayNumber: tracking.currentDisplayNumber,
         peopleAhead: tracking.peopleAhead,
-        whatsappQueued: false,
+        emailQueued: false,
+        recovered: true,
       });
     }
     if (method === "POST" && path.join("/") === "auth/login") {
@@ -888,7 +920,7 @@ export async function handleApi(request: Request): Promise<Response> {
       }>(queueResult.rows[0]);
       if (!archivedQueue) throw new HttpError(404, "NOT_FOUND", "Cola no encontrada");
       const ticketResult = await client.execute({
-        sql: `SELECT id, number, display_number, name, phone_normalized, created_at, status, source
+        sql: `SELECT id, number, display_number, name, email, created_at, status, source
               FROM tickets WHERE queue_id = ? ORDER BY number DESC LIMIT 500`,
         args: [archivedQueue.id],
       });
@@ -905,7 +937,7 @@ export async function handleApi(request: Request): Promise<Response> {
           number: number;
           display_number: string;
           name: string | null;
-          phone_normalized: string | null;
+          email: string | null;
           created_at: number;
           status: TicketStatus;
           source: "web" | "manual";
@@ -913,7 +945,7 @@ export async function handleApi(request: Request): Promise<Response> {
           id: ticket.id,
           displayNumber: ticket.display_number || formatTicketNumber(ticket.number),
           name: ticket.name || "(anonimizado)",
-          phoneMasked: maskPhone(ticket.phone_normalized),
+          emailMasked: maskEmail(ticket.email),
           createdAt: ticket.created_at,
           status: ticket.status,
           source: ticket.source,
@@ -941,9 +973,9 @@ export async function handleApi(request: Request): Promise<Response> {
     if (method === "POST" && adminPath.join("/") === "tickets") {
       const payload = z.object({
         name: z.string().trim().min(2).max(80),
-        phone: z.string().trim().min(6).max(20),
+        email: z.string().trim().email().max(254),
       }).parse(await bodyJson(request));
-      const created = await createTicket({ ...payload, whatsappConsent: false, source: "manual", operatorId: user.id, request });
+      const created = await createTicket({ ...payload, source: "manual", operatorId: user.id, request });
       return json(created, 201);
     }
     if (method === "POST" && adminPath[0] === "tickets" && adminPath[1] && adminPath[2]) {
@@ -974,10 +1006,9 @@ export async function handleApi(request: Request): Promise<Response> {
           privacyPolicyVersion: settings.privacy_policy_version ?? "1.0",
           retentionDays: Number(settings.retention_days ?? "7"),
         },
-        whatsapp: {
-          enabled: process.env.WHATSAPP_ENABLED === "true",
-          paidMessagesAllowed: process.env.WHATSAPP_PAID_MESSAGES_ALLOWED === "true",
-          configured: Boolean(process.env.WHATSAPP_ACCESS_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID),
+        email: {
+          configured: Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM),
+          senderConfigured: Boolean(process.env.EMAIL_FROM),
         },
       });
     }
@@ -1013,8 +1044,8 @@ export async function handleApi(request: Request): Promise<Response> {
   } catch (cause) {
     if (cause instanceof HttpError) return error(cause.status, cause.code, cause.message);
     if (cause instanceof z.ZodError) return error(400, "INVALID_INPUT", "Revisa los datos enviados.");
-    if (cause instanceof Error && cause.message.includes("idx_tickets_active_phone")) {
-      return error(409, "ACTIVE_TICKET_EXISTS", "Ya existe un turno activo para este teléfono.");
+    if (cause instanceof Error && cause.message.includes("idx_tickets_active_email")) {
+      return error(409, "ACTIVE_TICKET_EXISTS", "Ya existe un turno activo con este correo.");
     }
     console.error("API request failed", cause);
     return error(500, "INTERNAL_ERROR", "No se ha podido completar la solicitud.");

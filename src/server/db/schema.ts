@@ -64,8 +64,8 @@ export const tickets = sqliteTable(
     number: integer("number").notNull(),
     displayNumber: text("display_number").notNull(),
     name: text("name"),
-    phoneNormalized: text("phone_normalized"),
-    phoneLookupHash: text("phone_lookup_hash"),
+    email: text("email"),
+    emailLookupHash: text("email_lookup_hash"),
     status: text("status", {
       enum: ["waiting", "called", "in_service", "completed", "absent", "cancelled"],
     }).notNull(),
@@ -79,10 +79,10 @@ export const tickets = sqliteTable(
   (table) => [
     uniqueIndex("idx_tickets_queue_number").on(table.queueId, table.number),
     index("idx_tickets_queue_status_number").on(table.queueId, table.status, table.number),
-    uniqueIndex("idx_tickets_active_phone")
-      .on(table.queueId, table.phoneLookupHash)
+    uniqueIndex("idx_tickets_active_email")
+      .on(table.queueId, table.emailLookupHash)
       .where(
-        sql`${table.status} IN ('waiting', 'called', 'in_service') AND ${table.phoneLookupHash} IS NOT NULL AND ${table.personalDataCleared} = 0`,
+        sql`${table.status} IN ('waiting', 'called', 'in_service') AND ${table.emailLookupHash} IS NOT NULL AND ${table.personalDataCleared} = 0`,
       ),
   ],
 );
@@ -138,6 +138,7 @@ export const notificationAttempts = sqliteTable(
       .notNull()
       .references(() => tickets.id, { onDelete: "cascade" }),
     channel: text("channel").notNull(),
+    eventType: text("event_type").notNull().default("legacy"),
     status: text("status").notNull(),
     providerMessageId: text("provider_message_id"),
     attemptedAt: integer("attempted_at").notNull(),

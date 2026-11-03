@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { SessionUser } from "../../shared/types.ts";
 import { api } from "../api.ts";
+import { InstitutionLogo } from "./InstitutionLogo.tsx";
 
 export function AdminShell({ children, title }: { children: ReactNode; title: string }) {
   const [user, setUser] = useState<SessionUser | null>(null);
@@ -44,8 +45,11 @@ export function AdminShell({ children, title }: { children: ReactNode; title: st
     <div className="min-h-screen bg-canvas">
       <header className="bg-navy text-white">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3">
-          <Link href="/admin" className="font-semibold">
-            MiTurno · Administración
+          <Link href="/admin" className="flex items-center gap-2">
+            <span className="rounded bg-white px-2 py-1">
+              <InstitutionLogo className="block h-auto w-[180px]" />
+            </span>
+            <span className="text-sm font-semibold">Administración</span>
           </Link>
           <nav className="flex flex-wrap items-center gap-1">
             <Link href="/admin" className={linkClass("/admin", true)}>

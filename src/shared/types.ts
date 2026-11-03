@@ -2,8 +2,6 @@ import type { TicketStatus } from "./status.ts";
 
 export type PublicConfig = {
   establishmentName: string;
-  whatsappChannelAvailable: boolean;
-  defaultCountry: "ES";
   privacyPolicyVersion: string;
   dataControllerConfigured: boolean;
   dataControllerName: string;
@@ -35,14 +33,14 @@ export type TicketCreated = {
   trackingPath: string;
   currentDisplayNumber: string | null;
   peopleAhead: number;
-  whatsappQueued: boolean;
+  emailQueued: boolean;
 };
 
 export type AdminTicket = {
   id: string;
   displayNumber: string;
   name: string;
-  phoneMasked: string;
+  emailMasked: string;
   createdAt: number;
   status: TicketStatus;
   source: "web" | "manual";

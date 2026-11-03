@@ -11,7 +11,7 @@ Aplicación para emitir tickets numerados, seguir la posición en una cola y ate
 | Base de datos | Turso/libSQL con Drizzle ORM |
 | Alojamiento | Vercel |
 | Actualización de panel y pantalla | Sondeo con ETag cada 2,5 segundos |
-| Avisos | WhatsApp Cloud API opcional y desactivada por defecto |
+| Avisos | Correo transaccional mediante Resend |
 
 La lógica de tickets y sesiones se ejecuta en el servidor. La cola actual es la fuente de verdad: cada jornada abierta tiene su propia secuencia; abrir otra cancela los turnos activos de la anterior, archiva la cola anterior y conserva su historial. Solo se crea una cuenta de administrador, mediante un comando de instalación.
 
@@ -32,7 +32,7 @@ pnpm install
 cp .dev.vars.example .env.local
 ```
 
-Edita `.env.local`; define valores largos y distintos para `PHONE_PEPPER` y `CRON_SECRET`. Ajusta `BUSINESS_TIME_ZONE` a la zona del establecimiento. Para desarrollo local, conserva `TURSO_DATABASE_URL=file:local.db` y deja `TURSO_AUTH_TOKEN` vacío.
+Edita `.env.local`; define valores largos y distintos para `EMAIL_PEPPER` y `CRON_SECRET`. Ajusta `BUSINESS_TIME_ZONE` a la zona del establecimiento. Para desarrollo local, conserva `TURSO_DATABASE_URL=file:local.db` y deja `TURSO_AUTH_TOKEN` vacío.
 
 ```bash
 pnpm db:migrate
@@ -53,25 +53,22 @@ pnpm build
 ## Turso y Vercel
 
 1. Crea una base de datos en Turso y obtén su URL y token.
-2. Configura en local o en Vercel `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, `PHONE_PEPPER`, `APP_BASE_URL` y `CRON_SECRET`.
-3. Ejecuta `pnpm db:migrate` una vez contra la base Turso prevista. El comando aplica el esquema de esta app; **no importa D1**.
-4. Crea el único administrador con `pnpm create-admin -- <usuario> <contraseña>` en un entorno con esas variables.
-5. Despliega el proyecto en Vercel. El archivo `vercel.json` configura la tarea diaria de anonimización; Vercel debe tener `CRON_SECRET`.
+2. Verifica un dominio de envío en Resend.
+3. Configura en local o en Vercel `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, `EMAIL_PEPPER`, `APP_BASE_URL`, `CRON_SECRET`, `RESEND_API_KEY` y `EMAIL_FROM`. Usa como `EMAIL_FROM` una dirección del dominio verificado.
+4. Ejecuta `pnpm db:migrate` una vez contra la base Turso prevista. El comando aplica las migraciones versionadas de esta app; **no importa D1**.
+5. Crea el único administrador con `pnpm create-admin -- <usuario> <contraseña>` en un entorno con esas variables.
+6. Despliega el proyecto en Vercel. El archivo `vercel.json` configura la tarea diaria de anonimización; Vercel debe tener `CRON_SECRET`.
 
 No migres usuarios ni turnos existentes hasta confirmar si D1 contiene datos que deban conservarse. La migración de esos datos es una operación separada, con exportación y comprobación previas.
 
-## WhatsApp opcional
+## Avisos por correo
 
-El envío se mantiene apagado si falta cualquiera de las variables o el permiso de mensajes de pago:
+Se solicita el correo al crear el turno y se envían dos mensajes operativos: la confirmación con número/enlace de seguimiento y, cuando se finaliza, cancela o marca ausente al turno actual, un aviso al siguiente cliente de la cola. El formulario no acepta turnos si el correo es inválido.
 
-- `WHATSAPP_ENABLED=true`
-- `WHATSAPP_PAID_MESSAGES_ALLOWED=true`
-- `WHATSAPP_ACCESS_TOKEN`
-- `WHATSAPP_PHONE_NUMBER_ID`
-- `WHATSAPP_TEMPLATE_NAME`
-- `WHATSAPP_CALLED_TEMPLATE_NAME`
+- `RESEND_API_KEY`: clave privada de la API; solo servidor.
+- `EMAIL_FROM`: remitente en un dominio verificado en Resend.
 
-Las plantillas de Meta deben estar aprobadas y sus variables deben corresponder con el evento: la plantilla de confirmación recibe nombre, número y URL de seguimiento; la de llamada recibe nombre y número. El envío puede generar costes. El correo electrónico a clientes no está habilitado.
+Si Resend no está configurado o rechaza un mensaje, el turno se mantiene registrado y la pantalla lo indica; el intento queda anotado. El plan gratuito de Resend publica límites que pueden cambiar, así que comprueba sus [precios y límites actuales](https://resend.com/pricing). No uses el servicio para publicidad: los mensajes son solo relativos a la gestión solicitada.
 
 ## Rutas principales
 
@@ -82,4 +79,4 @@ Las plantillas de Meta deben estar aprobadas y sus variables deben corresponder 
 - `/admin/qr`: QR de solicitud
 - `/admin/ajustes`: identidad del establecimiento y privacidad
 
-El proceso de anonimización elimina nombre, teléfono, hash de búsqueda, enlaces de seguimiento y consentimientos tras el período de retención configurado. No sustituye una revisión legal de los textos ni de las obligaciones aplicables.
+El proceso de anonimización elimina nombre, correo, hash de búsqueda, enlaces de seguimiento y consentimientos tras el período de retención configurado. No sustituye una revisión legal de los textos ni de las obligaciones aplicables.

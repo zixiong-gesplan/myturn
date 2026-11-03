@@ -81,8 +81,8 @@ export function AdminSettingsPage() {
       <section className="mt-8 max-w-xl rounded-xl bg-white p-5 text-sm shadow-sm">
         <h2 className="font-semibold text-navy">Avisos por correo</h2>
         <p className="mt-2 text-muted">
-          Se envía el número al solicitar turno y se avisa al siguiente cliente cuando termina, se cancela o se marca
-          ausente el turno actual. Configura Resend en las variables de entorno para activar los envíos.
+          Se envía el número al solicitar turno y, al llamar a una persona, se le indica por correo que acuda al puesto
+          de las gafas de realidad virtual. Configura Resend en las variables de entorno para activar los envíos.
         </p>
         {email ? (
           <ul className="mt-3 list-disc pl-5">

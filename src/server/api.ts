@@ -335,7 +335,7 @@ async function createTicket(input: {
 
 async function sendTicketEmail(input: {
   ticketId: string;
-  eventType: "ticket_created" | "next_in_queue";
+  eventType: "ticket_created" | "ticket_called";
   email: string;
   subject: string;
   text: string;
@@ -536,7 +536,7 @@ async function adminTickets(filter: "active" | "today" | "all") {
   };
 }
 
-async function callNext(operator: User, request: Request) {
+async function callNext(operator: User) {
   const tx = await getClientForTransaction().transaction("write");
   const now = Math.floor(Date.now() / 1000);
   try {
@@ -568,7 +568,23 @@ async function callNext(operator: User, request: Request) {
       args: [crypto.randomUUID(), queue.id, ticket.id, operator.id, now],
     });
     await tx.commit();
-    return { id: ticket.id, displayNumber: ticket.display_number };
+    let emailQueued = false;
+    if (ticket.email) {
+      try {
+        const name = ticket.name || "Cliente";
+        emailQueued = await sendTicketEmail({
+          ticketId: ticket.id,
+          eventType: "ticket_called",
+          email: ticket.email,
+          subject: `Es tu turno ${ticket.display_number}`,
+          text: `Hola ${name}, ha llegado tu turno ${ticket.display_number}. Por favor, dirígete al puesto de las gafas de realidad virtual.`,
+          html: `<p>Hola ${escapeHtml(name)},</p><p>Ha llegado tu turno <strong>${escapeHtml(ticket.display_number)}</strong>.</p><p>Por favor, dirígete al puesto de las gafas de realidad virtual.</p>`,
+        });
+      } catch (cause) {
+        console.error("No se pudo enviar el aviso por correo del turno llamado", cause);
+      }
+    }
+    return { id: ticket.id, displayNumber: ticket.display_number, emailQueued };
   } catch (cause) {
     await tx.rollback();
     throw cause;
@@ -586,15 +602,13 @@ async function mutateStatus(ticketId: string, operator: User, next: "in_service"
   };
   try {
     const result = await tx.execute({
-      sql: `SELECT t.id, t.queue_id, t.status, q.current_ticket_id
-            FROM tickets t JOIN queues q ON q.id = t.queue_id WHERE t.id = ?`,
+      sql: "SELECT id, queue_id, status FROM tickets WHERE id = ?",
       args: [ticketId],
     });
     const ticket = row<{
       id: string;
       queue_id: string;
       status: TicketStatus;
-      current_ticket_id: string | null;
     }>(result.rows[0]);
     if (!ticket) throw new HttpError(404, "NOT_FOUND", "Turno no encontrado");
     if (!allowed[next].includes(ticket.status)) {
@@ -622,49 +636,10 @@ async function mutateStatus(ticketId: string, operator: User, next: "in_service"
       });
     }
     await tx.commit();
-    if (
-      ["completed", "absent", "cancelled"].includes(next) &&
-      ticket.current_ticket_id === ticket.id
-    ) {
-      try {
-        await notifyNextWaiting(ticket.queue_id);
-      } catch (cause) {
-        console.error("No se pudo enviar el aviso al siguiente turno", cause);
-      }
-    }
     return { id: ticketId, status: next };
   } catch (cause) {
     await tx.rollback();
     throw cause;
-  }
-}
-
-async function notifyNextWaiting(queueId: string): Promise<void> {
-  const result = await getClientForTransaction().execute({
-    sql: `SELECT id, display_number, name, email FROM tickets
-          WHERE queue_id = ? AND status = 'waiting' AND email IS NOT NULL
-          ORDER BY number ASC LIMIT 1`,
-    args: [queueId],
-  });
-  const ticket = row<{
-    id: string;
-    display_number: string;
-    name: string | null;
-    email: string;
-  }>(result.rows[0]);
-  if (!ticket) return;
-  const name = ticket.name || "Cliente";
-  try {
-    await sendTicketEmail({
-      ticketId: ticket.id,
-      eventType: "next_in_queue",
-      email: ticket.email,
-      subject: `Prepárate: tu turno ${ticket.display_number} se acerca`,
-      text: `Hola ${name}, el turno anterior ya ha sido atendido. Puedes acercarte a la cola. Tu número es ${ticket.display_number}.`,
-      html: `<p>Hola ${escapeHtml(name)},</p><p>El turno anterior ya ha sido atendido. Puedes acercarte a la cola.</p><p>Tu número es <strong>${escapeHtml(ticket.display_number)}</strong>.</p>`,
-    });
-  } catch (cause) {
-    console.error("No se pudo registrar el aviso al siguiente turno", cause);
   }
 }
 
@@ -957,7 +932,7 @@ export async function handleApi(request: Request): Promise<Response> {
       });
     }
     if (method === "POST" && adminPath.join("/") === "queue/next") {
-      const ticket = await callNext(user, request);
+      const ticket = await callNext(user);
       return json(ticket ? { empty: false, ticket } : { empty: true, message: "No hay turnos pendientes" });
     }
     if (method === "POST" && adminPath.join("/") === "queue/repeat") {

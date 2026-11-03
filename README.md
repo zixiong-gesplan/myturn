@@ -63,7 +63,7 @@ No migres usuarios ni turnos existentes hasta confirmar si D1 contiene datos que
 
 ## Avisos por correo
 
-Se solicita el correo al crear el turno y se envían dos mensajes operativos: la confirmación con número/enlace de seguimiento y, cuando se finaliza, cancela o marca ausente al turno actual, un aviso al siguiente cliente de la cola. El formulario no acepta turnos si el correo es inválido.
+Se solicita el correo al crear el turno y se envía una confirmación con el número y el enlace de seguimiento. Cuando el administrador pulsa «Llamar al siguiente turno», se avisa por correo a la persona llamada y se le indica que acuda al puesto de las gafas de realidad virtual. El formulario no acepta turnos si el correo es inválido.
 
 - `RESEND_API_KEY`: clave privada de la API; solo servidor.
 - `EMAIL_FROM`: remitente en un dominio verificado en Resend.

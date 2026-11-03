@@ -53,7 +53,11 @@ export const api = {
     ),
   createManual: (name: string, email: string) =>
     request<TicketCreated>("/api/admin/tickets", { method: "POST", body: JSON.stringify({ name, email }) }),
-  callNext: () => request<{ empty: boolean; message?: string; ticket?: AdminTicket }>("/api/admin/queue/next", { method: "POST" }),
+  callNext: () => request<{
+    empty: boolean;
+    message?: string;
+    ticket?: { id: string; displayNumber: string; emailQueued: boolean };
+  }>("/api/admin/queue/next", { method: "POST" }),
   newQueue: () => request<{ ok: boolean; queueId: string }>("/api/admin/queue/new", { method: "POST" }),
   repeat: () => request<{ ticket: AdminTicket }>("/api/admin/queue/repeat", { method: "POST" }),
   complete: (id: string) => request(`/api/admin/tickets/${id}/complete`, { method: "POST" }),

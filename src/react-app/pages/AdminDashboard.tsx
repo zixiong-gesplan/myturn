@@ -43,6 +43,23 @@ export function AdminDashboard() {
     }
   }
 
+  async function callNext() {
+    try {
+      const { data } = await api.callNext();
+      if (data.empty) {
+        setMessage(data.message ?? "No hay turnos pendientes");
+      } else {
+        const displayNumber = data.ticket?.displayNumber ?? "";
+        setMessage(data.ticket?.emailQueued
+          ? `Turno ${displayNumber} llamado; se envió el correo para acudir al puesto de las gafas de realidad virtual.`
+          : `Turno ${displayNumber} llamado, pero no se pudo enviar el correo.`);
+      }
+      await refresh(true);
+    } catch (err) {
+      setMessage(err instanceof ApiError ? err.message : "Error al llamar al siguiente turno");
+    }
+  }
+
   return (
     <AdminShell title="Cola de atención">
       {kpis ? (
@@ -66,7 +83,7 @@ export function AdminDashboard() {
         >
           Abrir nueva cola
         </button>
-        <button className="rounded-lg bg-navy px-4 py-2 text-white" onClick={() => run(() => api.callNext())}>
+        <button className="rounded-lg bg-navy px-4 py-2 text-white" onClick={() => void callNext()}>
           Llamar al siguiente turno
         </button>
         <button className="rounded-lg border border-slate-300 bg-white px-4 py-2" onClick={() => run(() => api.repeat(), "Llamada repetida")}>

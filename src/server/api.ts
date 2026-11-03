@@ -784,16 +784,11 @@ export async function handleApi(request: Request): Promise<Response> {
       return tracking ? addEtag(request, tracking) : error(404, "NOT_FOUND", "El enlace de seguimiento no es válido o ha caducado");
     }
     if (method === "POST" && path.join("/") === "tickets") {
-      const ipLimit = await rateLimit(`ticket:ip:${clientIp(request)}`, 20, 3600);
-      if (!ipLimit) throw new HttpError(429, "RATE_LIMITED", "Has realizado demasiadas solicitudes. Inténtalo más tarde.");
       const payload = createTicketSchema.parse(await bodyJson(request));
       const email = normalizeEmail(payload.email);
       const pepper = process.env.EMAIL_PEPPER || process.env.PHONE_PEPPER;
       if (!email) throw new HttpError(400, "INVALID_EMAIL", "El correo electrónico no es válido.");
       if (!pepper || pepper.length < 16) throw new HttpError(500, "SERVER_MISCONFIGURED", "El servicio no está configurado correctamente.");
-      const emailLimitHash = await hmacSha256Hex(pepper, email);
-      const emailLimit = await rateLimit(`ticket:email:${emailLimitHash}`, 5, 3600);
-      if (!emailLimit) throw new HttpError(429, "RATE_LIMITED", "Has realizado demasiadas solicitudes. Inténtalo más tarde.");
       const created = await createTicket({ ...payload, source: "web", request });
       return json(created, 201, {
         "Set-Cookie": cookieHeader(TRACK_COOKIE, created.trackingToken, request, 7 * 86400),

@@ -138,6 +138,7 @@ export const notificationAttempts = sqliteTable(
       .notNull()
       .references(() => tickets.id, { onDelete: "cascade" }),
     channel: text("channel").notNull(),
+    provider: text("provider"),
     eventType: text("event_type").notNull().default("legacy"),
     status: text("status").notNull(),
     providerMessageId: text("provider_message_id"),

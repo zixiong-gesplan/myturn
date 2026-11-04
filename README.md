@@ -53,8 +53,8 @@ pnpm build
 ## Turso y Vercel
 
 1. Crea una base de datos en Turso y obtén su URL y token.
-2. Verifica un dominio de envío en Resend.
-3. Configura en local o en Vercel `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, `EMAIL_PEPPER`, `APP_BASE_URL`, `CRON_SECRET`, `RESEND_API_KEY` y `EMAIL_FROM`. Usa como `EMAIL_FROM` una dirección del dominio verificado y define `APP_BASE_URL` con la URL pública HTTPS del sitio en producción. Si no está definida, la app usa el dominio público configurado en los ajustes o las variables automáticas de Vercel.
+2. Configura Resend y Brevo, y verifica en ambos el dominio o remitente que usarás.
+3. Configura en local o en Vercel `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, `EMAIL_PEPPER`, `APP_BASE_URL`, `CRON_SECRET`, `RESEND_API_KEY`, `BREVO_API_KEY` y `EMAIL_FROM`. Usa un remitente verificado tanto en Resend como en Brevo, y define `APP_BASE_URL` con la URL pública HTTPS del sitio en producción. Si no está definida, la app usa el dominio público configurado en los ajustes o las variables automáticas de Vercel.
 4. Ejecuta `pnpm db:migrate` una vez contra la base Turso prevista. El comando aplica las migraciones versionadas de esta app; **no importa D1**.
 5. Crea el único administrador con `pnpm create-admin -- <usuario> <contraseña>` en un entorno con esas variables.
 6. Despliega el proyecto en Vercel. El archivo `vercel.json` configura la tarea diaria de anonimización; Vercel debe tener `CRON_SECRET`.
@@ -66,9 +66,10 @@ No migres usuarios ni turnos existentes hasta confirmar si D1 contiene datos que
 Se solicita el correo al crear el turno y se envía una confirmación con el número y el enlace de seguimiento. Cuando el administrador pulsa «Llamar al siguiente turno», se avisa por correo a la persona llamada y se le indica que acuda al puesto de las gafas de realidad virtual. El formulario no acepta turnos si el correo es inválido.
 
 - `RESEND_API_KEY`: clave privada de la API; solo servidor.
-- `EMAIL_FROM`: remitente en un dominio verificado en Resend.
+- `BREVO_API_KEY`: clave privada SMTP/API de Brevo; solo servidor y necesaria para activar el fallback.
+- `EMAIL_FROM`: remitente verificado en ambos proveedores.
 
-Si Resend no está configurado o rechaza un mensaje, el turno se mantiene registrado y la pantalla lo indica; el intento queda anotado. El plan gratuito de Resend publica límites que pueden cambiar, así que comprueba sus [precios y límites actuales](https://resend.com/pricing). No uses el servicio para publicidad: los mensajes son solo relativos a la gestión solicitada.
+Resend se intenta primero. Si no está configurado o rechaza/falla el envío, se intenta automáticamente con Brevo cuando su clave está configurada. Cada intento registra el proveedor y el resultado. Si ninguno acepta el mensaje, el turno se mantiene registrado y la pantalla lo indica. Verifica el dominio o remitente en ambos servicios y consulta sus [límites de Resend](https://resend.com/pricing) y [planes de Brevo](https://www.brevo.com/pricing/). No uses el servicio para publicidad: los mensajes son solo relativos a la gestión solicitada.
 
 ## Rutas principales
 

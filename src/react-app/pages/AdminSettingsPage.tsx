@@ -82,12 +82,14 @@ export function AdminSettingsPage() {
         <h2 className="font-semibold text-navy">Avisos por correo</h2>
         <p className="mt-2 text-muted">
           Se envía el número al solicitar turno y, al llamar a una persona, se le indica por correo que acuda al puesto
-          de las gafas de realidad virtual. Configura Resend en las variables de entorno para activar los envíos.
+          de las gafas de realidad virtual. Resend se usa como proveedor principal y Brevo como alternativa automática.
         </p>
         {email ? (
           <ul className="mt-3 list-disc pl-5">
             <li>Servicio de correo: {email.configured ? "configurado" : "pendiente de configurar"}</li>
             <li>Remitente verificado: {email.senderConfigured ? "configurado" : "pendiente de configurar"}</li>
+            <li>Resend: {email.resendConfigured ? "configurado" : "pendiente de configurar"}</li>
+            <li>Brevo (alternativo): {email.brevoConfigured ? "configurado" : "pendiente de configurar"}</li>
           </ul>
         ) : null}
       </section>

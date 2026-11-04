@@ -5,5 +5,6 @@ BUSINESS_TIME_ZONE=Europe/Madrid
 TURSO_DATABASE_URL=file:local.db
 TURSO_AUTH_TOKEN=
 RESEND_API_KEY=
+BREVO_API_KEY=
 EMAIL_FROM=jlopmon@gesplan.es
 CRON_SECRET=genera-otro-valor-aleatorio-largo

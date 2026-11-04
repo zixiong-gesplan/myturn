@@ -6,6 +6,7 @@ import { formatTicketNumber } from "../shared/ticket-number";
 import { statusLabel, statusMessage, type TicketStatus } from "../shared/status";
 import { verifyPassword } from "../shared/password";
 import { hmacSha256Hex, sha256Hex } from "../shared/crypto";
+import { sendEmailWithFallback } from "./email-providers";
 import { getAppSettings, getClientForTransaction } from "./db/client";
 
 const SESSION_COOKIE = "mt_session";
@@ -351,74 +352,33 @@ async function sendTicketEmail(input: {
   });
   if (existing.rows.length) return true;
 
-  const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.EMAIL_FROM;
-  if (!apiKey || !from) {
+  const attempts = await sendEmailWithFallback({
+    resendApiKey: process.env.RESEND_API_KEY,
+    brevoApiKey: process.env.BREVO_API_KEY,
+    from: process.env.EMAIL_FROM,
+    to: input.email,
+    subject: input.subject,
+    text: input.text,
+    html: input.html,
+  });
+  for (const attempt of attempts) {
     await client.execute({
       sql: `INSERT INTO notification_attempts
-            (id, ticket_id, channel, event_type, status, attempted_at, error_code)
-            VALUES (?, ?, 'email', ?, 'skipped', ?, ?)`,
-      args: [crypto.randomUUID(), input.ticketId, input.eventType, now, !apiKey ? "missing_api_key" : "missing_sender"],
-    });
-    return false;
-  }
-
-  try {
-    const response = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from,
-        to: [input.email],
-        subject: input.subject,
-        text: input.text,
-        html: input.html,
-      }),
-      signal: AbortSignal.timeout(8000),
-    });
-    const responseText = await response.text();
-    let providerId: string | null = null;
-    if (responseText) {
-      try {
-        providerId = (JSON.parse(responseText) as { id?: string }).id ?? null;
-      } catch {
-        providerId = null;
-      }
-    }
-    const accepted = response.ok && Boolean(providerId);
-    await client.execute({
-      sql: `INSERT INTO notification_attempts
-            (id, ticket_id, channel, event_type, status, provider_message_id, attempted_at, error_code)
-            VALUES (?, ?, 'email', ?, ?, ?, ?, ?)`,
+            (id, ticket_id, channel, provider, event_type, status, provider_message_id, attempted_at, error_code)
+            VALUES (?, ?, 'email', ?, ?, ?, ?, ?, ?)`,
       args: [
         crypto.randomUUID(),
         input.ticketId,
+        attempt.provider,
         input.eventType,
-        accepted ? "accepted" : "failed",
-        providerId,
+        attempt.status,
+        attempt.providerMessageId,
         now,
-        accepted ? null : `provider_${response.status}`,
+        attempt.errorCode,
       ],
     });
-    return accepted;
-  } catch (cause) {
-    await client.execute({
-      sql: `INSERT INTO notification_attempts
-            (id, ticket_id, channel, event_type, status, attempted_at, error_code)
-            VALUES (?, ?, 'email', ?, 'failed', ?, ?)`,
-      args: [
-        crypto.randomUUID(),
-        input.ticketId,
-        input.eventType,
-        now,
-        cause instanceof Error && cause.name === "TimeoutError" ? "timeout" : "network",
-      ],
-    });
-    return false;
   }
+  return attempts.some((attempt) => attempt.status === "accepted");
 }
 
 async function createQueue(operator: User) {
@@ -986,7 +946,11 @@ export async function handleApi(request: Request): Promise<Response> {
           retentionDays: Number(settings.retention_days ?? "7"),
         },
         email: {
-          configured: Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM),
+          configured: Boolean(
+            process.env.EMAIL_FROM && (process.env.RESEND_API_KEY || process.env.BREVO_API_KEY),
+          ),
+          resendConfigured: Boolean(process.env.RESEND_API_KEY),
+          brevoConfigured: Boolean(process.env.BREVO_API_KEY),
           senderConfigured: Boolean(process.env.EMAIL_FROM),
         },
       });
